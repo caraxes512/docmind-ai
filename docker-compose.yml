@@ -1,0 +1,117 @@
+x-backend-env: &backend-env
+  ENVIRONMENT: ${ENVIRONMENT:-local}
+  POSTGRES_USER: ${POSTGRES_USER:-docmind}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docmind}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: ${POSTGRES_DB:-docmind}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  QDRANT_HOST: qdrant
+  QDRANT_PORT: 6333
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env — see backend/.env.example}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env — see backend/.env.example}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  LLM_MODEL: ${LLM_MODEL:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  GITHUB_OAUTH_REDIRECT_URI: ${GITHUB_OAUTH_REDIRECT_URI:-http://localhost:3000/auth/github/callback}
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+  LOCAL_STORAGE_ROOT: /var/docmind/storage
+  S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-["http://localhost:3000"]}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-docmind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docmind}
+      POSTGRES_DB: ${POSTGRES_DB:-docmind}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # No host port mapping here deliberately — Postgres should never be
+    # directly internet-reachable. Other services reach it over the
+    # compose-internal network by service name (POSTGRES_HOST=postgres
+    # above). Local dev access (e.g. via psql/a GUI client) is added back
+    # in docker-compose.override.yml, which docker compose loads
+    # automatically and which is NOT meant to ship to any real environment.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docmind}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *backend-env
+    volumes:
+      - backend_storage:/var/docmind/storage
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # concurrency=2: repository ingestion and doc generation are both
+    # memory/CPU-heavier tasks (embedding batches, LLM calls) — a higher
+    # concurrency here trades memory for throughput; tune per deployment size.
+    command: ["celery", "-A", "app.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    environment:
+      <<: *backend-env
+    volumes:
+      - backend_storage:/var/docmind/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend-api
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  backend_storage:

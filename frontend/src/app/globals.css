@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-plex-sans: "IBM Plex Sans", sans-serif;
+  --font-plex-mono: "IBM Plex Mono", monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-ink-900 text-paper font-sans antialiased;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight;
+  }
+  code, pre, kbd {
+    @apply font-mono;
+  }
+  ::selection {
+    @apply bg-annotation/30 text-paper;
+  }
+}
+
+@layer utilities {
+  /* Signature background for the landing hero and empty states — a faint
+     drafting-table grid, per the blueprint design motif. */
+  .bg-blueprint-canvas {
+    background-color: theme("colors.ink.900");
+    background-image: theme("backgroundImage.blueprint-grid");
+    background-size: theme("backgroundSize.grid");
+  }
+}
+
+@layer components {
+  /* Landing hero: annotation pins fade/rise in on a staggered delay (set via
+     the --delay custom property per-pin) to dramatize "the AI marking up
+     your repo's blueprint" — the product's actual behavior, not a generic
+     hero animation. */
+  .annotation-pin {
+    opacity: 0;
+    animation: pin-appear 0.6s ease-out forwards;
+    animation-delay: var(--delay, 0s);
+  }
+  @keyframes pin-appear {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .blueprint-line {
+    stroke-dasharray: 240;
+    stroke-dashoffset: 240;
+    animation: draw-line 1.4s ease-out forwards;
+    animation-delay: var(--delay, 0s);
+  }
+  @keyframes draw-line {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+}

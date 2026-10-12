@@ -1,0 +1,39 @@
+# Automatically merged on top of docker-compose.yml by `docker compose up`
+# (no -f flag needed) — this file is for LOCAL DEVELOPMENT ONLY. It exposes
+# database/cache ports to the host (so you can psql in, inspect Redis, etc.)
+# and mounts source code for hot-reload. Never use `-f docker-compose.yml
+# -f docker-compose.override.yml` in a staging/production deploy command —
+# just don't ship this file's contents there at all (see DEPLOYMENT.md).
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  qdrant:
+    ports:
+      - "6333:6333"
+
+  backend-api:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/app:/app/app
+      - backend_storage:/var/docmind/storage
+    environment:
+      ENVIRONMENT: local
+
+  celery-worker:
+    volumes:
+      - ./backend/app:/app/app
+      - backend_storage:/var/docmind/storage
+    environment:
+      ENVIRONMENT: local
+
+  frontend:
+    build:
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://backend-api:8000
