@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=65.5.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "docmind-ai-backend"
 version = "0.1.0"
@@ -42,6 +46,11 @@ dev = [
     "mypy>=1.13",
     "pre-commit>=4.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["docker*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
