@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.models.enums import FileIndexStatus
@@ -10,29 +10,33 @@ from app.repositories.base import BaseRepository
 
 class RepositoryFileRepository(BaseRepository):
     async def bulk_upsert_scan_results(self, repository_id: uuid.UUID, files: list[dict]) -> None:
-        """`files`: [{"file_path": ..., "language": ..., "content_hash": ...,
-        "size_bytes": ...}]. Files whose content_hash changed vs. the
-        existing row are marked STALE (change detection for incremental
-        regeneration); brand-new files are inserted as PENDING.
+    """`files`: [{"file_path": ..., "language": ..., "content_hash": ...,
+    "size_bytes": ...}]. Files whose content_hash changed vs. the
+    existing row are marked STALE (change detection for incremental
+    regeneration); brand-new files are inserted as PENDING.
 
-        Uses Postgres's INSERT ... ON CONFLICT (upsert) on the
-        (repository_id, file_path) unique constraint from Step 2, rather
-        than a select-then-branch loop — avoids N+1 queries for large repos.
-        """
+    Uses Postgres's INSERT ... ON CONFLICT (upsert) on the
+    (repository_id, file_path) unique constraint from Step 2, rather
+    than a select-then-branch loop — avoids N+1 queries for large repos.
+    """
         if not files:
             return
 
-        # First, snapshot existing hashes so we know which rows are "changed" vs "new" post-upsert.
         existing_result = await self.db.execute(
-            select(RepositoryFile.file_path, RepositoryFile.content_hash).where(
+            select(RepositoryFile.file_path, RepositoryFile.content_hash, RepositoryFile.index_status).where(
                 RepositoryFile.repository_id == repository_id
             )
         )
-        existing_hashes = {path: content_hash for path, content_hash in existing_result.all()}
+        existing_hashes = {
+            path: {"hash": content_hash, "status": status}
+            for path, content_hash, status in existing_result.all()
+        }
 
         rows = []
         for f in files:
-            previous_hash = existing_hashes.get(f["file_path"])
+            previous = existing_hashes.get(f["file_path"])
+            previous_hash = previous["hash"] if previous else None
+
             is_new = previous_hash is None
             is_changed = previous_hash is not None and previous_hash != f["content_hash"]
             status = (
@@ -40,8 +44,9 @@ class RepositoryFileRepository(BaseRepository):
                 if is_new
                 else FileIndexStatus.STALE
                 if is_changed
-                else FileIndexStatus.INDEXED  # unchanged — leave as previously indexed
+                else FileIndexStatus.INDEXED
             )
+
             rows.append(
                 {
                     "repository_id": repository_id,
@@ -54,15 +59,27 @@ class RepositoryFileRepository(BaseRepository):
             )
 
         stmt = pg_insert(RepositoryFile).values(rows)
+        excluded = stmt.excluded
+
         stmt = stmt.on_conflict_do_update(
             constraint="uq_repository_file_path",
             set_={
-                "content_hash": stmt.excluded.content_hash,
-                "size_bytes": stmt.excluded.size_bytes,
-                "language": stmt.excluded.language,
-                "index_status": stmt.excluded.index_status,
+                "content_hash": excluded.content_hash,
+                "size_bytes": excluded.size_bytes,
+                "language": excluded.language,
+                "index_status": case(
+                    (
+                        and_(
+                            RepositoryFile.index_status == FileIndexStatus.INDEXED,
+                            RepositoryFile.content_hash.is_distinct_from(excluded.content_hash),
+                        ),
+                        FileIndexStatus.STALE.value,
+                    ),
+                    else_=excluded.index_status,
+                ),
             },
         )
+
         await self.db.execute(stmt)
         await self.db.flush()
 
