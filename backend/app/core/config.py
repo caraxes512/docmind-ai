@@ -11,10 +11,11 @@ comment-only warning through Steps 2-10).
 from functools import lru_cache
 from typing import Literal
 
+from cryptography.fernet import Fernet
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_DEV_FERNET_KEY = "Q0hBTkdFX01FX0lOX0VOVl8zMl9CWVRFU19LRVkhIQ=="
+_DEV_FERNET_KEY = Fernet.generate_key().decode()
 _INSECURE_DEFAULTS = {
     "CHANGE_ME_IN_ENV",
     "CHANGE_ME_IN_ENV_FERNET_KEY_MUST_BE_32B64B",
