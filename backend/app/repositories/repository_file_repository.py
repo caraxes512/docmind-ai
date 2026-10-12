@@ -10,15 +10,15 @@ from app.repositories.base import BaseRepository
 
 class RepositoryFileRepository(BaseRepository):
     async def bulk_upsert_scan_results(self, repository_id: uuid.UUID, files: list[dict]) -> None:
-    """`files`: [{"file_path": ..., "language": ..., "content_hash": ...,
-    "size_bytes": ...}]. Files whose content_hash changed vs. the
-    existing row are marked STALE (change detection for incremental
-    regeneration); brand-new files are inserted as PENDING.
+        """`files`: [{"file_path": ..., "language": ..., "content_hash": ...,
+        "size_bytes": ...}]. Files whose content_hash changed vs. the
+        existing row are marked STALE (change detection for incremental
+        regeneration); brand-new files are inserted as PENDING.
 
-    Uses Postgres's INSERT ... ON CONFLICT (upsert) on the
-    (repository_id, file_path) unique constraint from Step 2, rather
-    than a select-then-branch loop — avoids N+1 queries for large repos.
-    """
+        Uses Postgres's INSERT ... ON CONFLICT (upsert) on the
+        (repository_id, file_path) unique constraint from Step 2, rather
+        than a select-then-branch loop — avoids N+1 queries for large repos.
+        """
         if not files:
             return
 
